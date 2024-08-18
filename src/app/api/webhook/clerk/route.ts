@@ -70,7 +70,7 @@ export async function POST(req: Request) {
     if (newUser) {
         await clerkClient.users.updateUserMetadata(id, {
             publicMetadata: {
-                userId: newUser.id
+                userId: newUser._id
             }
         })
     }
@@ -83,16 +83,15 @@ export async function POST(req: Request) {
     const { id, image_url, first_name, last_name, username } = evt.data;
 
     const user = {
-        clerkId: id,
         username: username!,
         firstName: first_name!,
         lastName: last_name!,
         photo: image_url
     }
 
-    const updatedUser = await updateUser(user);
+    const updatedUser = await updateUser(id, user);
 
-    return NextResponse.json({ message: 'OK', user: updatedUser})
+    return NextResponse.json({ message: 'OK', user: updatedUser })
 
   }
 
@@ -101,7 +100,7 @@ export async function POST(req: Request) {
 
     const deletedUser = await deleteUser(id!);
 
-    return NextResponse.json({ message: 'OK', user: deletedUser})
+    return NextResponse.json({ message: 'OK', user: deletedUser })
 
   }
 

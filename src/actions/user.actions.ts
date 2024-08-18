@@ -1,87 +1,81 @@
-"use server"
+'use server'
 
-import prisma from "@/db";
-import { handleError } from "@/lib/utils";
-import type { User } from "@prisma/client";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from 'next/cache'
 
-type ICreateUser = Omit<User, 'id'>;
-type IUpdateUser = Omit<ICreateUser, 'email'>;
+import { connectToDatabase } from '@/lib/database'
+import User from '@/lib/database/models/user.model'
+import Order from '@/lib/database/models/order.model'
+import Event from '@/lib/database/models/event.model'
+import { handleError } from '@/lib/utils'
 
-export const createUser = async (user: ICreateUser) => {
-    try {
+import { CreateUserParams, UpdateUserParams } from '@/types'
 
-        const newUser = await prisma.user.create({
-            data: user
-        });
+export async function createUser(user: CreateUserParams) {
+  try {
+    await connectToDatabase()
 
-        return newUser;
-        
-    } catch (error) {
-        handleError(error)
-    }
+    const newUser = await User.create(user)
+    return JSON.parse(JSON.stringify(newUser))
+  } catch (error) {
+    handleError(error)
+  }
 }
 
-export const getUserById = async (userId: number) => {
-    try {
-        const user = await prisma.user.findUnique({
-            where: {
-                id: userId
-            }
-        })
+export async function getUserById(userId: string) {
+  try {
+    await connectToDatabase()
 
-        if (!user) {
-            throw new Error('User not found')
-        }
+    const user = await User.findById(userId)
 
-        return user;
-
-    } catch (error) {
-        handleError(error)
-    }
+    if (!user) throw new Error('User not found')
+    return JSON.parse(JSON.stringify(user))
+  } catch (error) {
+    handleError(error)
+  }
 }
 
-export const updateUser = async (user: IUpdateUser) => {
-    try {
+export async function updateUser(clerkId: string, user: UpdateUserParams) {
+  try {
+    await connectToDatabase()
 
-        const updatedUser = await prisma.user.update({
-            where: {
-                clerkId: user.clerkId
-            },
-            data: user
-        })
+    const updatedUser = await User.findOneAndUpdate({ clerkId }, user, { new: true })
 
-        if (!updatedUser) throw new Error('User update failed')
-
-    } catch (error) {
-        handleError(error)
-    }
+    if (!updatedUser) throw new Error('User update failed')
+    return JSON.parse(JSON.stringify(updatedUser))
+  } catch (error) {
+    handleError(error)
+  }
 }
 
-export const deleteUser = async (clerkId: string) => {
-    try {
-        
-        const userToDelete = await prisma.user.findUnique({
-            where: {
-                clerkId
-            }
-        })
+export async function deleteUser(clerkId: string) {
+  try {
+    await connectToDatabase()
 
-        if(!userToDelete) {
-            throw new Error('User not found')
-        }
+    // Find user to delete
+    const userToDelete = await User.findOne({ clerkId })
 
-        const deletedUser = await prisma.user.delete({
-            where: {
-                id: userToDelete.id
-            }
-        })
-
-        revalidatePath('/')
-
-        return deletedUser;
-        
-    } catch (error) {
-        handleError(error)
+    if (!userToDelete) {
+      throw new Error('User not found')
     }
+
+    // Unlink relationships
+    await Promise.all([
+      // Update the 'events' collection to remove references to the user
+      Event.updateMany(
+        { _id: { $in: userToDelete.events } },
+        { $pull: { organizer: userToDelete._id } }
+      ),
+
+      // Update the 'orders' collection to remove references to the user
+      Order.updateMany({ _id: { $in: userToDelete.orders } }, { $unset: { buyer: 1 } }),
+    ])
+
+    // Delete user
+    const deletedUser = await User.findByIdAndDelete(userToDelete._id)
+    revalidatePath('/')
+
+    return deletedUser ? JSON.parse(JSON.stringify(deletedUser)) : null
+  } catch (error) {
+    handleError(error)
+  }
 }
